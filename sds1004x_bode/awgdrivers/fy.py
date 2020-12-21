@@ -34,7 +34,7 @@ class FygenAWG(BaseAWG):
 
     def connect(self):
         if not self.fy:
-            self.fy = fygen.FYGen(port=self.port)
+            self.fy = fygen.FYGen(serial_path=self.port)
     
     def disconnect(self):
         if self.fy:
@@ -53,11 +53,9 @@ class FygenAWG(BaseAWG):
         self.fy.set(_map_channel(channel), enable=on)
     
     def set_frequency(self, channel, freq):
-        fpart, ipart = math.modf(freq)
         self.fy.set(
                 _map_channel(channel),
-                freq_hz=int(ipart),
-                freq_uhz=int(fpart * 1000000))
+                freq_uhz=int(freq * 1000000.0))
         
     def set_phase(self, phase):
         self.fy.set(
@@ -69,11 +67,10 @@ class FygenAWG(BaseAWG):
         self.fy.set(_map_channel(channel), wave='sin')
     
     def set_amplitue(self, channel, amp):
+        loadz = self.load_impedance[channel]
         self.fy.set(
             _map_channel(channel),
-            volts=round(
-                self.load_impedance[channel] / 
-                (AWG_OUTPUT_IMPEDANCE + self.load_impedance), 2))
+            volts=round(loadz / (AWG_OUTPUT_IMPEDANCE + loadz), 2))
     
     def set_offset(self, channel, offset):
         pass
