@@ -23,7 +23,7 @@ SET_INIT_STATE = {
     'channel': (0, 1),
     'duty_cycle': 0.5,
     'enable': False,
-    'freq_hz': 10000,
+    'freq_uhz': 10000 * 100000,
     'offset_volts': 0,
     'phase_degrees': 0,
     'volts': 5,
@@ -177,7 +177,6 @@ class FYGen(object):
       channel=None,
       enable=None,         #pylint: disable=unused-argument
       wave=None,           #pylint: disable=unused-argument
-      freq_hz=None,        #pylint: disable=unused-argument
       freq_uhz=None,       #pylint: disable=unused-argument
       volts=None,          #pylint: disable=unused-argument
       offset_volts=None,   #pylint: disable=unused-argument
@@ -189,14 +188,9 @@ class FYGen(object):
     All parameters are optional and should be specified using named
     parameters (e.g. do not depend on parameter ordering.)
 
-    Note there are two parameters for frequency: freq_hz and freq_uhz.  This is
-    to avoid floating point rounding issues.  You can pass either freq_hz or
-    freq_uhz but not both.
-
     Essential Args:
       channel: Can be a single number or a list of numbers.
       wave: must be 0
-      freq_hz: An integer that specifies the frequency in hertz.
       freq_uhz: An integer that specifies the frequency in micro hertz.
       volts: A float that specifies the amplitude in volts.  This is rounded to
         the nearest hundredth of a volt.
@@ -210,10 +204,6 @@ class FYGen(object):
 
     # Convert local arguments into a dictionary
     args_dict = dict(locals())
-
-    if freq_hz is not None and freq_uhz is not None:
-      raise InvalidFrequencyError(
-          'Please, provide freq_hz or freq_uhz, not both.')
 
     if channel is None:
       channel = self.default_channel
@@ -289,7 +279,6 @@ class FYGen(object):
     make_command = {
         'duty_cycle': functools.partial(_make_duty_cycle_command, channel),
         'enable': functools.partial(_make_enable_command, channel),
-        'freq_hz': functools.partial(_make_freq_hz_command, channel),
         'freq_uhz': functools.partial(_make_freq_uhz_command, channel),
         'offset_volts': functools.partial(
             _make_offset_volts_command,
@@ -354,10 +343,6 @@ class FYGen(object):
     else:
       p = params
 
-    if 'freq_hz' in p and 'freq_uhz' in p:
-      raise InvalidFrequencyError(
-          'Please, provide freq_hz or freq_uhz, not both.')
-
     prefix = 'RF' if channel == 1 else 'RM'
 
     def send(code):
@@ -381,7 +366,6 @@ class FYGen(object):
     conversions = {
         'duty_cycle': lambda: float(send('D')) / 100000.0,
         'enable': lambda: bool(int(send('N'))),
-        'freq_hz': lambda: int(send('F').split('.')[0]),
         'freq_uhz': lambda: int(float(send('F')) * 1000000.0),
         'offset_volts': get_offset_volts,
         'phase_degrees': lambda: float(send('P')) / 1000.0,
@@ -450,8 +434,6 @@ def _make_wave_command(channel, wave):
 def _make_freq_uhz_command(channel, freq_uhz):
   """Create a frequency command string.
 
-  freq_hz and freq_uhz are summed for the final result.
-
   Args:
     channel: Channel number
     freq_uhz: Integer frequency in uhz.  None is acceptable.
@@ -463,10 +445,6 @@ def _make_freq_uhz_command(channel, freq_uhz):
     raise InvalidFrequencyError('Invalid freq_uhz: %d' % freq_uhz)
 
   return _make_command(channel, 'F%014u' % freq_uhz)
-
-def _make_freq_hz_command(channel, freq_hz):
-  return _make_freq_uhz_command(channel, freq_hz * 1000000)
-
 
 def _make_volts_command(channel, max_volts, volts):
   """Creates a waveform amplitude string."""
