@@ -10,7 +10,6 @@ import time
 import functools
 import six
 import serial
-import wavedef
 
 # Version numbers.  The minor version number increments when bugs are fixed
 # or trivial features are added.  The major version number increments if a
@@ -28,7 +27,7 @@ SET_INIT_STATE = {
     'offset_volts': 0,
     'phase_degrees': 0,
     'volts': 5,
-    'wave': 'sin',
+    'wave': 0,  # sin
 }
 
 class Error(Exception):
@@ -46,6 +45,9 @@ class CommandTooShortError(Error):
 class InvalidChannelError(Error):
   """Tried to pass an invalid channel number."""
 
+class InvalidDutyCycleError(Error):
+  """Tried to pass an invalid duty cycle."""
+
 class InvalidVoltageError(Error):
   """Tried to pass an invalid voltage."""
 
@@ -61,29 +63,6 @@ class UnknownParameterError(Error):
 class UnknownWaveformError(Error):
   """Specified an unknown waveform."""
 
-def detect_device(model):
-  """
-  Tries to determine the best-matching device for the given model
-  """
-  model = model.lower()
-
-  # Try matching based on prefix, this is helpful to map e.g.
-  # FY2350H to FY2300
-  for device in wavedef.SUPPORTED_DEVICES:
-    if device[:4] == model[:4]:
-      return device
-
-  raise wavedef.UnsupportedDeviceError(
-      "Unable to autodetect device '%s'. "
-      "Use FYGen(device_name='fy2300') with one of the supported devices, "
-      "beware that the waveforms might not match up."
-      "Supported devices: %s"
-      % (
-          model,
-          ', '.join(wavedef.SUPPORTED_DEVICES)
-      )
-  )
-
 class FYGen(object):
   """Initialize a connection object with the signal generator.
 
@@ -94,7 +73,6 @@ class FYGen(object):
       self,
       serial_path='/dev/ttyUSB0',
       port=None,
-      device_name=None,
       default_channel=0,
       read_before_write=True,
       init_state=True,
@@ -112,10 +90,6 @@ class FYGen(object):
       port: If not None, specifies an output port.  In this case, path is
         ignored.  One usecase is to set port=sys.stdout to see the commands
         that will be sent.
-      device_name: Specific device name, such as 'fy2300', 'fy6800'.  Some
-        functions may not be available or may be incorrectly mapped if this
-        value is incorrect.
-        If left empty the device will be autodetected
       default_channel: The channel(s) used when the parameter is omitted.
       read_before_write: If True, then setting a parameter will first get it.
         If the parameter is already set to the desired value, the value is not
@@ -133,10 +107,6 @@ class FYGen(object):
     if port:
       self.port = port
       self.is_serial = _port_is_serial
-
-      # We cannot autodetect here
-      if not self.is_serial and device_name is None:
-        device_name = 'fy2300'
 
     else:
       self.port = serial.Serial(
@@ -158,17 +128,12 @@ class FYGen(object):
     self.read_before_write = read_before_write and self.is_serial
     self.debug_level = debug_level
     self.init_called_for_channel = set()
-    self.device_name = device_name
     self.default_channel = default_channel
     self.max_volts = max_volts
     self.min_volts = min_volts
     # Set to force sweep enable
     self.force_sweep_enable = False
 
-    # Detect model
-    if self.device_name is None:
-      model = self.get_model()
-      self.device_name = detect_device(model)
 
   def close(self):
     """Closes serial port.  Call this at program exit for a clean shutdown."""
@@ -230,9 +195,7 @@ class FYGen(object):
 
     Essential Args:
       channel: Can be a single number or a list of numbers.
-      wave: Can be a string or an integer < 100.  If it's a string, wavedef
-        is used as a lookup table.  If it's an integer, the number is used
-        directly.
+      wave: must be 0
       freq_hz: An integer that specifies the frequency in hertz.
       freq_uhz: An integer that specifies the frequency in micro hertz.
       volts: A float that specifies the amplitude in volts.  This is rounded to
@@ -337,7 +300,7 @@ class FYGen(object):
         'volts': functools.partial(
             _make_volts_command, channel, self.max_volts),
         'wave': functools.partial(
-            _make_wave_command, channel, self.device_name),
+            _make_wave_command, channel),
     }
 
     command_list = []
@@ -401,12 +364,9 @@ class FYGen(object):
       """self.send shortcut."""
       return self.send(prefix + code)
 
-    def get_waveform_name():
-      """Gets the waveform name from the signal generator."""
-      try:
-        return wavedef.get_name(self.device_name, int(send('W')), channel)
-      except wavedef.Error:
-        raise UnknownWaveformError('Unknown waveform index returned')
+    def get_waveform_id():
+      """Gets the waveform id from the signal generator."""
+      return int(send('W'))
 
     def get_offset_volts():
       """Gets offset volts, correcting for an "unsigned" bug in the fygen."""
@@ -426,7 +386,7 @@ class FYGen(object):
         'offset_volts': get_offset_volts,
         'phase_degrees': lambda: float(send('P')) / 1000.0,
         'volts': lambda: float(send('A')) / 10000.0,
-        'wave': get_waveform_name,
+        'wave': get_waveform_id,
     }
 
     for name in p:
@@ -472,30 +432,19 @@ def _make_command(channel, suffix):
   raise InvalidChannelError(
       'Invalid channel: %s.  Only 0 or 1 is supported' % channel)
 
-def _make_wave_command(channel, device_name, wave):
+def _make_wave_command(channel, wave):
   """Creates a wave command string.
 
   Args:
     channel: Channel number
-    wave: A string or an integer.  If a string, then wavedef is used as a
-      lookup table
+    wave: must == 0
 
   Raises:
-    UnknownWaveformError: If a string is passed for wave and it's not found
-      in wavedef
-    UnknownWaveformError: If the waveform index is too high or too low
+    UnknownWaveformError: If wave != 0
   """
-  if isinstance(wave, str):
-    try:
-      wave = wavedef.get_id(device_name, wave, channel)
-    except wavedef.Error as e:
-      raise UnknownWaveformError(e)
-
-  if wave < 0:
-    raise UnknownWaveformError(
-        'Invalid waveform index %d.  Index must be >= 0' % wave)
-
-  return _make_command(channel, 'W%02u' % wave)
+  if wave != 0:
+    raise UnknownWaveformError('Only sin waves are supported')
+  return _make_command(channel, 'W00')
 
 
 def _make_freq_uhz_command(channel, freq_uhz):

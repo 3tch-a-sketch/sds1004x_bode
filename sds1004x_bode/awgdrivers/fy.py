@@ -64,7 +64,7 @@ class FygenAWG(BaseAWG):
 
     def set_wave_type(self, channel, wvtp):
         del wvtp  # This parameter is ignored
-        self.fy.set(_map_channel(channel), wave='sin')
+        self.fy.set(_map_channel(channel), wave=0)
     
     def set_amplitue(self, channel, amp):
         loadz = self.load_impedance[channel]
