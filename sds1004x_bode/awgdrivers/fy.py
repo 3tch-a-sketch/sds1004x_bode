@@ -161,6 +161,10 @@ class FygenAWG(BaseAWG):
     else:
       raise InvalidChannelError('Channel shoud be 1 or 2')
 
+    if self._send('R' + channel + command) == match:
+      debug('already set %s', match)
+      return
+
     for _ in range(RETRY_COUNT):
       self._send('W' + channel + command + value)
       if self._send('R' + channel + command) == match:
