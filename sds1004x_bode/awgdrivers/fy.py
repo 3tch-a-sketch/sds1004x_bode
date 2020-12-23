@@ -11,7 +11,7 @@ AWG_ID = "fy"
 AWG_OUTPUT_IMPEDANCE = 50.0
 MAX_READ_SIZE = 256
 RETRY_COUNT = 3
-VERBOSE = True  # Set to True for protocol debugging 
+VERBOSE = False  # Set to True for protocol debugging 
 
 class Error(Exception):
   pass
