@@ -5,6 +5,7 @@
 """
 
 import serial
+import time
 from base_awg import BaseAWG
 
 AWG_ID = "fy"
@@ -72,8 +73,7 @@ class FygenAWG(BaseAWG):
 
     def initialize(self):
         self.connect()
-        self.enable_output(1, False)
-        self.enable_output(2, False)
+        self.enable_output(0, False)
 
     def get_id(self):
         return AWG_ID
@@ -92,11 +92,25 @@ class FygenAWG(BaseAWG):
           freq is a floating point value in Hz.
         """
         uhz = int(freq * 1000000.0)
+
+        # Bug alert: Some values of frequency (for example 454.07 Hz)
+        # Trigger a bug where the UI of the generator shows the correct
+        # value but the readback function returns an incorrect fractional
+        # hertz value (454.004464 Hz for the example above)
+        # The work-around is to just match the Hz part of the return
+        # value.
+        def match_hz_only(match, got):
+          if '.' in got and match == got[:got.index('.')]:
+              return True
+          debug('set_frequency mismatch (looking at Hz value only)')
+          return False
+
         self._retry(
             channel,
             "F",
             "%014u" % uhz,
-            "%08u.%06u" % (int(freq), int(uhz % 1000000)))
+            "%08u" % int(freq),
+            match_fn=match_hz_only)
 
     def set_phase(self, phase):
         """Sets the phase of a channel in degrees."""
@@ -132,25 +146,30 @@ class FygenAWG(BaseAWG):
 
           offset is a floating point number.
         """
+        # Factor in load impedance.
+        loadz = self.load_impedance[channel]
+        offset = offset * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz
+
         # Due to a bug, FY returns negative offsets as
         # an unsigned integer.  Thus math is needed to predict
         # the returned value correctly
-        offset_unsigned = int(offset * 1000)
+        offset_unsigned = int(round(offset, 3) * 1000.0)
         if offset_unsigned < 0:
-          offset_unsigned = 0x100000000 - offset_unsigned
+          offset_unsigned = 0x100000000 + offset_unsigned
         self._retry(
             channel,
             "O",
-            "%.2f" % offset,
+            "%.3f" % offset,
             "%u" % offset_unsigned)
 
     def set_load_impedance(self, channel, z):
         """Sets the load impedance for a channel."""
-        if z > 10000000.0:
+        maxz = 100000000.0
+        if z > maxz:
             # Due to resolution limitations and rounding
             # very high impedances give the same result as
             # infinity.
-            z = 10000000.0
+            z = maxz
         self.load_impedance[channel] = z
 
     def _recv(self, command):
@@ -182,11 +201,11 @@ class FygenAWG(BaseAWG):
 
         return response.strip()
 
-    def _retry(self, channel, command, value, match):
+    def _retry(self, channel, command, value, match, match_fn=None):
         """Retries the command until match is satisfied."""
         if channel == 0:
-          retry(1, command, value, match)
-          retry(2, command, value, match)
+          self._retry(1, command, value, match)
+          self._retry(2, command, value, match)
           return
         elif channel == 1:
             channel = "M"
@@ -195,20 +214,24 @@ class FygenAWG(BaseAWG):
         else:
             raise InvalidChannelError("Channel shoud be 1 or 2")
 
-        if self._send("R" + channel + command) == match:
+        if not match_fn:
+          # usually we want ==
+          match_fn = lambda match, got: match == got
+
+        if match_fn(match, self._send("R" + channel + command)):
             debug("already set %s", match)
             return
 
         for _ in range(RETRY_COUNT):
             self._send("W" + channel + command + value)
-            if self._send("R" + channel + command) == match:
+            if match_fn(match, self._send("R" + channel + command)):
                 debug("matched %s", match)
                 return
             debug("mismatched %s", match)
 
         raise CommandNotAcknowledgedError(
-            "%s did not produce an expectd response after %d retries" % (
-                prefix + send_suffix, RETRY_COUNT))
+            "%s did not produce an expected response after %d retries" % (
+                "W" + channel + command + value, RETRY_COUNT))
 
 if __name__ == '__main__':
     print "This module shouldn't be run. Run awg_tests.py instead."
