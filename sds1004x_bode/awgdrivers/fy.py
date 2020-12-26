@@ -6,25 +6,15 @@
 
 import serial
 import time
+
+import exceptions
 from base_awg import BaseAWG
 
 AWG_ID = "fy"
 AWG_OUTPUT_IMPEDANCE = 50.0
 MAX_READ_SIZE = 256
-RETRY_COUNT = 3
+RETRY_COUNT = 2
 VERBOSE = False  # Set to True for protocol debugging 
-
-class Error(Exception):
-    pass
-
-class CommandTooShortError(Error):
-    pass
-
-class CommandNotAcknowledgedError(Error):
-    pass
-
-class InvalidChannelError(Error):
-    pass
 
 def debug(msg, *args):
     if VERBOSE:
@@ -41,9 +31,10 @@ class FygenAWG(BaseAWG):
         self.serial_path = port
         self.baud_rate = baud_rate
         self.timeout = timeout
+        # None -> Hi-Z
         self.load_impedance = {
-                1: 1000000.0,
-                2: 1000000.0,
+                1: None,
+                2: None,
         }
 
     def connect(self):
@@ -93,10 +84,10 @@ class FygenAWG(BaseAWG):
         """
         uhz = int(freq * 1000000.0)
 
-        # Bug alert: Some values of frequency (for example 454.07 Hz)
-        # Trigger a bug where the UI of the generator shows the correct
-        # value but the readback function returns an incorrect fractional
-        # hertz value (454.004464 Hz for the example above)
+        # AWG Bug: With the FY2300 and some values of frequency (for example
+        # 454.07 Hz) a bug occurs where the UI of the generator shows the
+        # correct value on the UI but the "RMF" command returns an incorrect
+        # fractional hertz value (454.004464 Hz for the example above).
         # The work-around is to just match the Hz part of the return
         # value.
         def match_hz_only(match, got):
@@ -133,8 +124,7 @@ class FygenAWG(BaseAWG):
           impedance is 50 ohms and amp=50 ohms, the actual voltage
           set is 1 * (50 + 50) / 50 = 2V.
         """
-        loadz = self.load_impedance[channel]
-        volts = round(amp * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz, 4)
+        volts = round(self._apply_load_impedance(channel, amp), 4)
         self._retry(
             channel,
             "A",
@@ -147,10 +137,9 @@ class FygenAWG(BaseAWG):
           offset is a floating point number.
         """
         # Factor in load impedance.
-        loadz = self.load_impedance[channel]
-        offset = offset * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz
+        offset = self._apply_load_impedance(channel, offset)
 
-        # Due to a bug, FY returns negative offsets as
+        # AWG Bug: The FY2300 returns negative offsets as
         # an unsigned integer.  Thus math is needed to predict
         # the returned value correctly
         offset_unsigned = int(round(offset, 3) * 1000.0)
@@ -164,13 +153,18 @@ class FygenAWG(BaseAWG):
 
     def set_load_impedance(self, channel, z):
         """Sets the load impedance for a channel."""
-        maxz = 100000000.0
+        maxz = 10000000.0
         if z > maxz:
-            # Due to resolution limitations and rounding
-            # very high impedances give the same result as
-            # infinity.
-            z = maxz
+            z = None  # Hi-z
         self.load_impedance[channel] = z
+
+    def _apply_load_impedance(channel, volts):
+        if channel not in self.load_impedance:
+          raise exceptions.UnknownChannelError("Unknown channel: %s" % channel)
+        if not self.load_impedance[channel]:
+          return volts  # Hi-Z
+        loadz = self.load_impedance[channel]
+        return amp * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz
 
     def _recv(self, command):
         """Waits for device."""
@@ -181,8 +175,6 @@ class FygenAWG(BaseAWG):
     def _send(self, command, retry_count=5):
         """Sends a low-level command. Returns the response."""
         debug("send (attempt %u/5) -> %s", 6 - retry_count, command)
-        if len(command) < 3:
-            raise CommandTooShortError("Command too short: %s" % command)
 
         data = command + "\n"
         data = data.encode()
@@ -212,7 +204,7 @@ class FygenAWG(BaseAWG):
         elif channel == 2:
             channel = "F"
         else:
-            raise InvalidChannelError("Channel shoud be 1 or 2")
+            raise exceptions.UnknownChannelError("Channel shoud be 1 or 2")
 
         if not match_fn:
           # usually we want ==
@@ -229,9 +221,13 @@ class FygenAWG(BaseAWG):
                 return
             debug("mismatched %s", match)
 
-        raise CommandNotAcknowledgedError(
-            "%s did not produce an expected response after %d retries" % (
-                "W" + channel + command + value, RETRY_COUNT))
+        # Print a warning.  This is not an error because the AWG read bugs
+        # worked-around in this module could vary by AWG model number or
+        # firmware revision number.
+        sys.stderr.write(
+              "Warning: %s did not produce an expected response after %d "
+              "retries\n" % (
+                  "W" + channel + command + value, RETRY_COUNT))
 
 if __name__ == '__main__':
     print "This module shouldn't be run. Run awg_tests.py instead."
