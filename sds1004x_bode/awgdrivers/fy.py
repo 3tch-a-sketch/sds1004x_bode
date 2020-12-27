@@ -158,13 +158,13 @@ class FygenAWG(BaseAWG):
             z = None  # Hi-z
         self.load_impedance[channel] = z
 
-    def _apply_load_impedance(channel, volts):
+    def _apply_load_impedance(self, channel, volts):
         if channel not in self.load_impedance:
           raise exceptions.UnknownChannelError("Unknown channel: %s" % channel)
         if not self.load_impedance[channel]:
           return volts  # Hi-Z
         loadz = self.load_impedance[channel]
-        return amp * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz
+        return volts * (AWG_OUTPUT_IMPEDANCE + loadz) / loadz
 
     def _recv(self, command):
         """Waits for device."""
@@ -189,7 +189,7 @@ class FygenAWG(BaseAWG):
             # sometime the siggen answers queries with nothing.  Wait a bit,
             # then try again
             time.sleep(0.1)
-            return self.send(command, retry_count - 1)
+            return self._send(command, retry_count - 1)
 
         return response.strip()
 
