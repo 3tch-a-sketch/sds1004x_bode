@@ -105,7 +105,7 @@ VXI-11 DESTROY_LINK, SCPI command: None
 
 ## Changelog
 ### 2021-01-01
-* The program now supports Python 3.0
+* The program now supports Python 3.X
 
 ### 2019-01-30
 
