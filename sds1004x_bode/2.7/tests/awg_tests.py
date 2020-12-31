@@ -11,7 +11,7 @@ from sds1004x_bode.awgdrivers import constants
 from sds1004x_bode.awg_factory import awg_factory
 
 # Port settings constants
-PORT = "/dev/ttyUSB0"
+PORT = "com3"
 TIMEOUT = 5
 
 if __name__ == '__main__':
@@ -38,10 +38,10 @@ if __name__ == '__main__':
     
     # Get AWG id
     awg_id = awg.get_id()
-    print "AWG id: %s" % (awg_id)
+    print(awg_id)
     
     # Output off
-    print "Setting output to off."
+    print("Setting output to off.")
     awg.enable_output(0, False)
     
     # Channel 1: 257.86Hz, 1Vpp, offset 0.5V
@@ -59,13 +59,13 @@ if __name__ == '__main__':
         awg.set_amplitue(2, 1.5)
         awg.set_offset(2, -0.35)
     except UnknownChannelError:
-        print "This AWG doesn't have second channel."
+        print("This AWG doesn't have second channel.")
 
     # Output on
-    print "Setting output to on."
+    print ("Setting output to on.")
     awg.enable_output(0, True)
     
     # Disconnect
-    print "Disconnecting from the AWG."
+    print ("Disconnecting from the AWG.")
     awg.disconnect()
     
