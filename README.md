@@ -20,6 +20,8 @@ As of January 30, 2019 the program supports the following models:
 
 * **Feeltech FY6600** Another Chinese generator which is widely sold on eBay and AliExpress. It also connects to the PC as a USB serial port.
 
+* **Feeltech FY Series** Universal driver written by [Matt Wach](https://github.com/mattwach/)
+
 ## Program Structure
 TBD
 
@@ -27,7 +29,7 @@ TBD
 Before starting the program you have to tell the oscilloscope how to connect to the waveform generator. Connect your oscilloscope to the same network where your PC is connected. Then go to ```Configure => AWG I/O``` in the Bode plot settings. Define LAN connection and the IP addres of your PC as the AWG IP. After starting the program you can press ```Test Connection``` button to test the communication between the oscilloscope and the PC.
 
 ## Running The Program
-To run this program you must have Python 2.7 installed.
+To run this program you must have Python 2.7 or 3.0 installed.
 
 The source code is located in the [```sds1004x_bode```](https://github.com/4x1md/sds1004x_bode/tree/master/sds1004x_bode) directory of this repository.
 
@@ -102,6 +104,8 @@ VXI-11 DESTROY_LINK, SCPI command: None
 ```
 
 ## Changelog
+### 2021-01-01
+* The program now supports Python 3.X
 
 ### 2019-01-30
 
