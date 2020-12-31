@@ -20,6 +20,8 @@ As of January 30, 2019 the program supports the following models:
 
 * **Feeltech FY6600** Another Chinese generator which is widely sold on eBay and AliExpress. It also connects to the PC as a USB serial port.
 
+* **Feeltech FY Series** Universal driver written by [Matt Wach](https://github.com/mattwach/)
+
 ## Program Structure
 TBD
 
